@@ -1,0 +1,12 @@
+flask
+flask-socketio
+eventlet
+tensorflow
+numpy
+psutil
+requests
+scapy
+transformers
+GPUtil
+huggingface_hub
+python-dotenv

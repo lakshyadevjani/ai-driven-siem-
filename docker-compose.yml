@@ -1,0 +1,47 @@
+services:
+  siem:
+    build: .
+    ports:
+      - "5000:5000"
+    env_file: .env
+    environment:
+      OLLAMA_BASE_URL: http://ollama:11434
+    cap_add:
+      - NET_RAW
+      - NET_ADMIN
+    volumes:
+      - siem_data:/app/data
+    depends_on:
+      - ollama
+    restart: unless-stopped
+
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    restart: unless-stopped
+
+  ollama-init:
+    image: ollama/ollama:latest
+    depends_on:
+      - ollama
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        i=0
+        until ollama pull llama3.2; do
+          i=$$((i + 1))
+          if [ "$$i" -ge 12 ]; then exit 1; fi
+          sleep 5
+        done
+    environment:
+      OLLAMA_HOST: ollama:11434
+    volumes:
+      - ollama_data:/root/.ollama
+    restart: "no"
+
+volumes:
+  siem_data:
+  ollama_data:
