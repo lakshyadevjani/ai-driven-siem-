@@ -7,8 +7,7 @@ pipeline {
     }
 
     environment {
-        COMPOSE_PROJECT_NAME = 'ai_siem'
-        DATA_DIR = '/app/data'
+        COMPOSE_PROJECT_NAME = 'ai-driven-siem-english'
     }
 
     stages {
@@ -20,30 +19,41 @@ pipeline {
 
         stage('Validate') {
             steps {
-                sh 'python3 -m compileall -q app_groq.py db_create.py ollama_lib.py'
-                sh 'docker compose config'
+                sh 'cp .env.example .env'
+                sh 'docker compose config --quiet'
             }
         }
 
         stage('Build') {
             steps {
-                sh 'docker compose build'
+                sh 'docker compose build siem'
             }
         }
 
         stage('Deploy') {
             when {
-                expression { env.BRANCH_NAME == null || env.BRANCH_NAME == 'main' || env.BRANCH_NAME == 'master' }
+                expression { env.BRANCH_NAME == null || env.BRANCH_NAME == 'main' }
             }
             steps {
-                sh 'docker compose up -d'
+                withCredentials([
+                    string(credentialsId: 'groq-api-key', variable: 'GROQ_API_KEY'),
+                    string(credentialsId: 'flask-secret-key', variable: 'FLASK_SECRET_KEY')
+                ]) {
+                    sh '''
+                        set +x
+                        umask 077
+                        printf 'GROQ_API_KEY=%s\\nFLASK_SECRET_KEY=%s\\n' \
+                            "$GROQ_API_KEY" "$FLASK_SECRET_KEY" > .env
+                        docker compose up -d
+                    '''
+                }
             }
         }
     }
 
     post {
-        unsuccessful {
-            sh 'docker compose ps || true'
+        always {
+            sh 'rm -f .env'
         }
     }
 }

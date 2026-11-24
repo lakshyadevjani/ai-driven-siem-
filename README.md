@@ -78,17 +78,37 @@ packet capture interfaces appropriately. Packet capture also requires `NET_RAW` 
 
 ## Jenkins
 
-`Jenkinsfile` defines a pipeline that:
+Start the local Jenkins controller with:
 
-1. Checks out the source
-2. Compiles the Python files
-3. Validates Docker Compose
-4. Builds the image
-5. Deploys with Docker Compose on `main` or `master`
+```powershell
+docker compose up --build -d jenkins
+docker compose logs jenkins
+```
 
-The Jenkins agent must have Docker, Docker Compose, and access to `.env`. Provide the Groq,
-Hugging Face, and Flask secret values through Jenkins credentials or a protected environment
-file rather than committing them.
+Open `http://localhost:8081`. Retrieve the initial administrator password with:
+
+```powershell
+docker compose exec jenkins cat /var/jenkins_home/secrets/initialAdminPassword
+```
+
+Complete the setup wizard and install the suggested plugins, including Pipeline and
+Credentials Binding. Create a Pipeline job configured to use this Git repository, branch
+`main`, and script path `Jenkinsfile`. For a private repository, configure a GitHub access
+credential in Jenkins.
+
+Add these Jenkins **Secret text** credentials using the exact IDs:
+
+- `groq-api-key` — a valid Groq API key
+- `flask-secret-key` — a long, random Flask session secret
+
+The pipeline checks out the source, validates Compose, builds the SIEM image, then deploys
+on `main`. It writes a temporary `.env` from Jenkins credentials and removes it afterward;
+secrets are not stored in Git. The public Hugging Face model does not require a token.
+
+The Jenkins container mounts the Docker socket so it can build and deploy containers. Access
+to that socket grants control over the Docker host. Jenkins is therefore bound to localhost
+only; do not expose port 8080 or the Docker socket to an untrusted network. Keep Jenkins
+credentials and the Jenkins administrator account private.
 
 ## Database
 
