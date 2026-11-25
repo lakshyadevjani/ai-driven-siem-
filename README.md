@@ -1,132 +1,146 @@
-# AI-Driven SIEM Dashboard
+# AI-Driven SIEM
 
-This project provides a Flask-based SIEM dashboard for live system metrics, network packet
-logging, IP reputation checks, SQLite history, Groq analysis, and local Ollama notifications.
+A single-host security-monitoring prototype that brings system metrics, network metadata,
+event logs, and AI-assisted analysis into a web dashboard.
 
-## Features
+> This is an academic prototype, not a production or enterprise SIEM. It does not collect
+> telemetry from remote hosts or automatically block threats.
 
-- Protected dashboard login and registration
-- Live CPU, memory, and disk metrics through Socket.IO
-- Network packet capture with Scapy
-- Public-IP geolocation and Blocklist.de reputation checks
-- SQLite storage for metrics, logs, and network requests
-- Groq chat and periodic system analysis
-- Optional Ollama notifications and Docker Compose Ollama service
-- Hugging Face-hosted TensorFlow CNN model loading
-- Docker and Jenkins deployment support
+## Project at a glance
 
-## Requirements
+The application collects CPU, memory, and disk metrics with `psutil` and optional GPU
+information with `GPUtil`. Scapy captures IPv4 TCP/UDP packet metadata visible to the app.
+The Flask backend stores records in SQLite and serves a dashboard with live updates,
+network/log tables, and an AI chat panel.
 
-- Docker Desktop or Docker Engine with Compose
-- Groq API key
-- Network privileges for packet capture
-- Linux or Docker host networking is recommended for production packet visibility
-
-## Local Configuration
-
-Create a local environment file:
-
-```powershell
-Copy-Item .env.example .env
+```text
+Host metrics ─┐
+              ├─> Flask + Socket.IO ─> SQLite ─> Browser dashboard
+Packet metadata┘          ├─> Groq API (chat and analysis)
+                          └─> Ollama (local AI notifications)
 ```
 
-Set at least:
+### Main technologies
 
-```dotenv
-GROQ_API_KEY=your_groq_api_key_here
-FLASK_SECRET_KEY=replace_with_a_long_random_secret
-OLLAMA_BASE_URL=http://localhost:11434
-HF_TOKEN=your_huggingface_token_here
-```
+- **Backend:** Python, Flask, Flask-SocketIO
+- **Monitoring/capture:** psutil, GPUtil, Scapy
+- **Storage:** SQLite
+- **AI:** Groq API, Ollama, TensorFlow/Keras, Hugging Face Hub
+- **Frontend:** HTML/Jinja, Tailwind CSS, Chart.js, Socket.IO
+- **Deployment:** Docker Compose, Jenkins, GitHub
 
-The Hugging Face token is only needed for gated/private model repositories. It is optional
-for the public model configured in `app_groq.py`.
+## Run the application with Docker
 
-## Run Locally
+Prerequisites: Docker Desktop with Linux containers and Docker Compose.
+
+1. In PowerShell, from the project directory:
+
+   ```powershell
+   Copy-Item .env.example .env
+   notepad .env
+   ```
+
+2. Set `GROQ_API_KEY` to your own Groq API key and `FLASK_SECRET_KEY` to a private random
+   value. `HF_TOKEN` is optional for the public model. Never commit or share `.env`.
+
+   Generate a Flask secret locally:
+
+   ```powershell
+   python -c "import secrets; print(secrets.token_urlsafe(32))"
+   ```
+
+3. Build and start the services:
+
+   ```powershell
+   docker compose up --build -d
+   docker compose ps
+   ```
+
+   First startup may take several minutes: Docker downloads application dependencies and
+   the Ollama `llama3.2` model.
+
+4. Open the app:
+
+   - Create an account: <http://localhost:5000/register>
+   - Sign in: <http://localhost:5000/login>
+   - Dashboard: <http://localhost:5000/>
+
+   There is no default username or password.
+
+Useful commands:
 
 ```powershell
-python -m venv venv
-.\\venv\\Scripts\\Activate.ps1
-pip install -r requirements.txt
-python app_groq.py
-```
-
-Open `http://localhost:5000`. Register the first user and log in.
-
-## Run with Docker
-
-```powershell
-Copy-Item .env.example .env
-docker compose up --build -d
 docker compose logs -f siem
+docker compose ps
+docker compose down
 ```
 
-Open `http://localhost:5000`.
-
-The Compose stack starts:
-
-- `siem` on port 5000
-- `ollama` on port 11434
-- `ollama-init`, which downloads the `llama3.2` model
-- Named volumes for SIEM data and Ollama models
-
-## Docker Network Scope
-
-By default, Docker networking limits packet capture to traffic visible inside the container.
-For visibility into host traffic, run the SIEM container with host networking and configure
-packet capture interfaces appropriately. Packet capture also requires `NET_RAW` and `NET_ADMIN`.
+`docker compose down` preserves named volumes. Avoid `docker compose down --volumes` unless
+you intend to remove the SQLite data, Ollama model, and Jenkins configuration.
 
 ## Jenkins
 
-Start the local Jenkins controller with:
+Jenkins is included in the Compose configuration and is available at
+<http://localhost:8081>.
+
+1. Retrieve the initial administrator password:
+
+   ```powershell
+   docker compose exec jenkins cat /var/jenkins_home/secrets/initialAdminPassword
+   ```
+
+2. Complete the Jenkins setup and install the Pipeline and Credentials Binding plugins.
+3. Create a Pipeline job pointing at this GitHub repository, branch `*/main`, with script
+   path `Jenkinsfile`.
+4. Add two **Secret text** credentials in Jenkins' **System → Global** store:
+
+   | Credential ID | Value |
+   |---|---|
+   | `groq-api-key` | Your Groq API key |
+   | `flask-secret-key` | A long random Flask secret |
+
+The pipeline checks out the code, validates Docker Compose, builds the SIEM image, and
+deploys the stack from `main`. It does not currently run a full automated test suite.
+
+**Jenkins security:** Jenkins can access the Docker socket, which gives it broad control
+over Docker on this machine. It is bound to localhost; keep its credentials private and do
+not expose Jenkins or the Docker socket to an untrusted network.
+
+## Data and configuration
+
+Docker Compose uses named volumes:
+
+- `siem_data` — SQLite database at `/app/data/system_metrics.db`
+- `ollama_data` — downloaded Ollama model
+- `jenkins_data` — Jenkins configuration and credentials
+
+The database contains `users`, `metrics`, `logs`, and `network_requests` tables. User
+passwords are stored as hashes.
+## Known limitations
+
+- The project monitors one application environment; it is not a multi-host SIEM.
+- The SecIDS-CNN model can be loaded, but **CNN classification is not connected to live
+  packet processing**.
+- Docker Desktop on Windows may not expose all physical-host network traffic to the
+  container. Metrics in Docker may also reflect the container/VM environment rather than
+  every Windows host metric.
+- Groq and IP enrichment use external services. Treat logs and network information as
+  sensitive.
+- The app uses Flask's development server and is not hardened for public production use.
+  Keep it on a trusted network and do not expose it directly to the internet.
+- AI output is advisory; the app does not perform autonomous threat response.
+
+## Troubleshooting
+
+Check Docker Desktop and the app:
 
 ```powershell
-docker compose up --build -d jenkins
-docker compose logs jenkins
+docker desktop status
+docker info
+docker compose ps
+docker compose logs --tail 80 siem
+curl.exe -I --max-time 20 http://127.0.0.1:5000/login
 ```
 
-Open `http://localhost:8081`. Retrieve the initial administrator password with:
-
-```powershell
-docker compose exec jenkins cat /var/jenkins_home/secrets/initialAdminPassword
-```
-
-Complete the setup wizard and install the suggested plugins, including Pipeline and
-Credentials Binding. Create a Pipeline job configured to use this Git repository, branch
-`main`, and script path `Jenkinsfile`. For a private repository, configure a GitHub access
-credential in Jenkins.
-
-Add these Jenkins **Secret text** credentials using the exact IDs:
-
-- `groq-api-key` — a valid Groq API key
-- `flask-secret-key` — a long, random Flask session secret
-
-The pipeline checks out the source, validates Compose, builds the SIEM image, then deploys
-on `main`. It writes a temporary `.env` from Jenkins credentials and removes it afterward;
-secrets are not stored in Git. The public Hugging Face model does not require a token.
-
-The Jenkins container mounts the Docker socket so it can build and deploy containers. Access
-to that socket grants control over the Docker host. Jenkins is therefore bound to localhost
-only; do not expose port 8080 or the Docker socket to an untrusted network. Keep Jenkins
-credentials and the Jenkins administrator account private.
-
-## Database
-
-SQLite data is stored in `/app/data/system_metrics.db` inside the container. Named Docker
-volumes preserve that data across container restarts.
-
-Tables include:
-
-- `users`
-- `logs`
-- `metrics`
-- `network_requests`
-
-## Security
-
-- Passwords use Werkzeug password hashing.
-- Dashboard and data APIs require a logged-in session.
-- Socket.IO connections require an authenticated Flask session.
-- Set `FLASK_SECRET_KEY` to a stable random value in production.
-- Run the application behind HTTPS in a public deployment.
-- Restrict packet-sniffing and SIEM network access to authorized users.
+If Docker Desktop reports a WSL startup error, resolve the Docker/WSL engine issue before
+debugging the Flask app. Back up data before resetting Docker or removing volumes.
